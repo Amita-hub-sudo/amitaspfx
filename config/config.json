@@ -1,0 +1,18 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/config.2.0.schema.json",
+  "version": "2.0",
+  "bundles": {
+    "hellospfx-web-part": {
+      "components": [
+        {
+          "entrypoint": "./lib/webparts/hellospfx/HellospfxWebPart.js",
+          "manifest": "./src/webparts/hellospfx/HellospfxWebPart.manifest.json"
+        }
+      ]
+    }
+  },
+  "externals": {},
+  "localizedResources": {
+    "HellospfxWebPartStrings": "lib/webparts/hellospfx/loc/{locale}.js"
+  }
+}
