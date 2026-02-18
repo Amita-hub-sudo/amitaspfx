@@ -1,32 +1,36 @@
-name: SPFx CI/CD (Certificate Auth)
+name: Build and Deploy SPFx to SharePoint App Catalog
 
 on:
   push:
     branches:
       - main
 
-jobs: 
+jobs:
   build-and-deploy:
     runs-on: windows-latest
 
     steps:
-      # 1️⃣ Checkout repository
-      - name: Checkout code
+      # 1️⃣ Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2️⃣ Setup Node
-      - name: Setup Node
+      # 2️⃣ Setup Node 18
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
       # 3️⃣ Install dependencies
-      - name: Install npm packages
-        run: npm ci
+      - name: Install dependencies
+        run: |
+          npm install
+          npm install -g gulp
 
       # 4️⃣ Build SPFx solution
-      - name: Build SPFx
+      - name: Build solution
         run: |
+          gulp clean
+          gulp build --ship
           gulp bundle --ship
           gulp package-solution --ship
 
@@ -34,72 +38,32 @@ jobs:
       - name: Install PnP PowerShell
         shell: pwsh
         run: |
-          Install-Module PnP.PowerShell -Force -Scope CurrentUser
+          Install-Module PnP.PowerShell -Scope CurrentUser -Force -SkipPublisherCheck
 
-      # 6️⃣ Deploy to Tenant App Catalog
+      # 6️⃣ Create certificate file from secret
+      - name: Create certificate file
+        shell: pwsh
+        run: |
+          $bytes = [Convert]::FromBase64String("${{ secrets.AZURE_CERT_BASE64 }}")
+          [IO.File]::WriteAllBytes("cert.pfx", $bytes)
+
+      # 7️⃣ Deploy to SharePoint Tenant App Catalog
       - name: Deploy to SharePoint
         shell: pwsh
-        env:
-          CLIENT_ID: ${{ secrets.CLIENT_ID }}
-          TENANT_ID: ${{ secrets.TENANT_ID }}
-          CERT_BASE64: ${{ secrets.CERT_BASE64 }}
-          CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
         run: |
+          Import-Module PnP.PowerShell -Force
 
-          Write-Host "🔐 Decoding certificate..."
-
-          $certBytes = [Convert]::FromBase64String($env:CERT_BASE64)
-          $certPath = "$env:RUNNER_TEMP\cert.pfx"
-          [IO.File]::WriteAllBytes($certPath, $certBytes)
-
-          $securePassword = ConvertTo-SecureString $env:CERT_PASSWORD -AsPlainText -Force
-
-          # Connect to SharePoint Admin Center first
-          $adminUrl = "https://wb0wj-admin.sharepoint.com"
-
-          Write-Host "🔗 Connecting to Admin Center..."
           Connect-PnPOnline `
-            -Url $adminUrl `
-            -ClientId $env:CLIENT_ID `
-            -Tenant $env:TENANT_ID `
-            -CertificatePath $certPath `
-            -CertificatePassword $securePassword
+            -Url "https://wb0wj-admin.sharepoint.com" `
+            -ClientId "${{ secrets.AZURE_CLIENT_ID }}" `
+            -Tenant "wb0wj.onmicrosoft.com" `
+            -CertificatePath "cert.pfx" `
+            -CertificatePassword (ConvertTo-SecureString "${{ secrets.AZURE_CERT_PASSWORD }}" -AsPlainText -Force)
 
-          # Get actual Tenant App Catalog URL
-          $appCatalogUrl = Get-PnPTenantAppCatalogUrl
-          Write-Host "📦 Tenant App Catalog URL: $appCatalogUrl"
-
-          # Connect to actual App Catalog
-          Write-Host "🔄 Connecting to App Catalog..."
-          Connect-PnPOnline `
-            -Url $appCatalogUrl `
-            -ClientId $env:CLIENT_ID `
-            -Tenant $env:TENANT_ID `
-            -CertificatePath $certPath `
-            -CertificatePassword $securePassword
-
-          # Find SPFx package automatically
-          Write-Host "🔍 Searching for .sppkg file..."
-          $package = Get-ChildItem -Path "sharepoint/solution" -Filter *.sppkg | Select-Object -First 1
-
-          if (-not $package) {
-              Write-Error "❌ No .sppkg file found in sharepoint/solution"
-              exit 1
-          }
-
-          Write-Host "✅ Found package: $($package.FullName)"
-
-          # Upload package
-          Write-Host "⬆ Uploading package..."
           Add-PnPApp `
-            -Path $package.FullName `
-            -Overwrite `
-            -ErrorAction Stop
+            -Path "sharepoint/solution/hello-word-client-side-solution.sppkg" `
+            -Scope Tenant `
+            -Publish `
+            -Overwrite
 
-          # Publish package
-          Write-Host "🚀 Publishing package..."
-          Publish-PnPApp `
-            -Identity $package.Name `
-            -ErrorAction Stop
-
-          Write-Host "🎉 Deployment completed successfully."
+          Write-Host "✅ Deployment completed successfully!"
