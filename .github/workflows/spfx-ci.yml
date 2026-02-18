@@ -10,30 +10,36 @@ jobs:
     runs-on: windows-latest
 
     env:
-      APP_CATALOG_URL: https://wb0wj.sharepoint.com/sites/appcatalog
+      APP_CATALOG_URL: https://wb0wj.sharepoint.com/sites/appcatalog/_layouts/15/tenantAppCatalog.aspx/manageApps
 
     steps:
+      # 1️⃣ Checkout
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # 2️⃣ Setup Node
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      - name: Install dependencies
+      # 3️⃣ Install dependencies
+      - name: Install npm packages
         run: npm ci
 
+      # 4️⃣ Build SPFx
       - name: Build SPFx
         run: |
           gulp bundle --ship
           gulp package-solution --ship
 
+      # 5️⃣ Install latest PnP PowerShell
       - name: Install PnP PowerShell
         shell: pwsh
         run: |
           Install-Module PnP.PowerShell -Force -Scope CurrentUser
 
+      # 6️⃣ Deploy to SharePoint
       - name: Deploy to SharePoint
         shell: pwsh
         env:
@@ -43,12 +49,15 @@ jobs:
           CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
         run: |
 
-          # Decode certificate
+          Write-Host "🔐 Decoding certificate..."
+
           $certBytes = [Convert]::FromBase64String($env:CERT_BASE64)
           $certPath = "$env:RUNNER_TEMP\cert.pfx"
           [IO.File]::WriteAllBytes($certPath, $certBytes)
 
           $securePassword = ConvertTo-SecureString $env:CERT_PASSWORD -AsPlainText -Force
+
+          Write-Host "🔗 Connecting to SharePoint..."
 
           Connect-PnPOnline `
             -Url $env:APP_CATALOG_URL `
@@ -57,11 +66,28 @@ jobs:
             -CertificatePath $certPath `
             -CertificatePassword $securePassword
 
+          Write-Host "📦 Searching for .sppkg file..."
+
+          $package = Get-ChildItem -Path "sharepoint/solution" -Filter *.sppkg | Select-Object -First 1
+
+          if (-not $package) {
+              Write-Error "❌ No .sppkg file found in sharepoint/solution"
+              exit 1
+          }
+
+          Write-Host "✅ Found package: $($package.FullName)"
+
+          Write-Host "⬆ Uploading package..."
+
           Add-PnPApp `
-            -Path "sharepoint/solution/hello-word.sppkg" `
-            -Overwrite
+            -Path $package.FullName `
+            -Overwrite `
+            -ErrorAction Stop
+
+          Write-Host "🚀 Publishing package..."
 
           Publish-PnPApp `
-            -Identity "hello-word.sppkg"
+            -Identity $package.Name `
+            -ErrorAction Stop
 
-          Write-Host "Deployment completed successfully."
+          Write-Host "🎉 Deployment completed successfully."
