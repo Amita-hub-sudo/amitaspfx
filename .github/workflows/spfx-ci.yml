@@ -1,55 +1,47 @@
-name: SPFx CI/CD Pipeline
-
-on:
-  push:
-    branches:
+trigger:
+  branches:
+    include:
       - main
 
-jobs:
-  build-and-deploy:
-    runs-on: windows-latest
+pool:
+  vmImage: windows-latest
 
-    steps:
-    # Checkout code
-    - name: Checkout repository
-      uses: actions/checkout@v3
+variables:
+  TENANT_NAME: wb0wj
+  TENANT_DOMAIN: wb0wj.onmicrosoft.com
+  APP_CATALOG_URL: https://wb0wj.sharepoint.com/sites/appcatalog
+  ADMIN_URL: https://wb0wj-admin.sharepoint.com
 
-    # Setup Node 18 (SPFx 1.20 requirement)
-    - name: Setup Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: 18.x
+steps:
+- task: NodeTool@0
+  displayName: Install Node.js
+  inputs:
+    versionSpec: '18.x'
 
-    # Install dependencies
-    - name: Install dependencies
-      run: npm install
+- script: npm ci
+  displayName: Install npm packages
 
-    # Build SPFx
-    - name: Build solution
-      run: gulp build --ship
+- script: |
+    gulp bundle --ship
+    gulp package-solution --ship
+  displayName: Build SPFx solution
 
-    # Bundle solution
-    - name: Bundle solution
-      run: gulp bundle --ship
+- powershell: |
+    Install-Module PnP.PowerShell -Force -Scope CurrentUser
+  displayName: Install PnP.PowerShell
 
-    # Package solution
-    - name: Package solution
-      run: gulp package-solution --ship
+- powershell: |
+    Connect-PnPOnline `
+      -Url "$(APP_CATALOG_URL)" `
+      -TenantAdminUrl "$(ADMIN_URL)" `
+      -ClientId "$(CLIENT_ID)" `
+      -ClientSecret "$(CLIENT_SECRET)" `
+      -Tenant "$(TENANT_DOMAIN)"
 
-    # Deploy to SharePoint App Catalog
-    - name: Deploy to SharePoint App Catalog
-      shell: pwsh
-      run: |
-        Install-Module PnP.PowerShell -Force -Scope CurrentUser
+    Add-PnPApp `
+      -Path "$(Build.SourcesDirectory)/sharepoint/solution/your-solution.sppkg" `
+      -Overwrite
 
-        Connect-PnPOnline `
-          -Url "https://wb0wj.sharepoint.com/sites/appcatalog" `
-          -ClientId "${{ secrets.CLIENT_ID }}" `
-          -ClientSecret "${{ secrets.CLIENT_SECRET }}"
-
-        $sppkgPath = Get-ChildItem -Path "sharepoint/solution" -Filter *.sppkg
-
-        Add-PnPApp `
-          -Path $sppkgPath.FullName `
-          -Publish `
-          -Overwrite    
+    Publish-PnPApp `
+      -Identity "your-solution.sppkg"
+  displayName: Deploy to SharePoint Tenant App Catalog
