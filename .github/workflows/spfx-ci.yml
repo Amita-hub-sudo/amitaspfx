@@ -1,47 +1,56 @@
-trigger:
-  branches:
-    include:
+name: SPFx CI/CD
+
+on:
+  push:
+    branches:
       - main
 
-pool:
-  vmImage: windows-latest
+jobs:
+  build-and-deploy:
+    runs-on: windows-latest
 
-variables:
-  TENANT_NAME: wb0wj
-  TENANT_DOMAIN: wb0wj.onmicrosoft.com
-  APP_CATALOG_URL: https://wb0wj.sharepoint.com/sites/appcatalog
-  ADMIN_URL: https://wb0wj-admin.sharepoint.com
+    env:
+      TENANT_DOMAIN: wb0wj.onmicrosoft.com
+      APP_CATALOG_URL: https://wb0wj.sharepoint.com/sites/appcatalog
+      ADMIN_URL: https://wb0wj-admin.sharepoint.com
 
-steps:
-- task: NodeTool@0
-  displayName: Install Node.js
-  inputs:
-    versionSpec: '18.x'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-- script: npm ci
-  displayName: Install npm packages
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
 
-- script: |
-    gulp bundle --ship
-    gulp package-solution --ship
-  displayName: Build SPFx solution
+      - name: Install dependencies
+        run: npm ci
 
-- powershell: |
-    Install-Module PnP.PowerShell -Force -Scope CurrentUser
-  displayName: Install PnP.PowerShell
+      - name: Build SPFx solution
+        run: |
+          gulp bundle --ship
+          gulp package-solution --ship
 
-- powershell: |
-    Connect-PnPOnline `
-      -Url "$(APP_CATALOG_URL)" `
-      -TenantAdminUrl "$(ADMIN_URL)" `
-      -ClientId "$(CLIENT_ID)" `
-      -ClientSecret "$(CLIENT_SECRET)" `
-      -Tenant "$(TENANT_DOMAIN)"
+      - name: Install PnP PowerShell
+        shell: pwsh
+        run: Install-Module PnP.PowerShell -Force -Scope CurrentUser
 
-    Add-PnPApp `
-      -Path "$(Build.SourcesDirectory)/sharepoint/solution/your-solution.sppkg" `
-      -Overwrite
+      - name: Deploy to SharePoint App Catalog
+        shell: pwsh
+        env:
+          CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+        run: |
+          Connect-PnPOnline `
+            -Url "$env:APP_CATALOG_URL" `
+            -TenantAdminUrl "$env:ADMIN_URL" `
+            -ClientId "$env:CLIENT_ID" `
+            -ClientSecret "$env:CLIENT_SECRET" `
+            -Tenant "$env:TENANT_DOMAIN"
 
-    Publish-PnPApp `
-      -Identity "your-solution.sppkg"
-  displayName: Deploy to SharePoint Tenant App Catalog
+          Add-PnPApp `
+            -Path "sharepoint/solution/your-solution.sppkg" `
+            -Overwrite
+
+          Publish-PnPApp `
+            -Identity "your-solution.sppkg"
