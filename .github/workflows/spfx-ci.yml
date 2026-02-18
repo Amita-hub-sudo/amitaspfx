@@ -9,11 +9,8 @@ jobs:
   build-and-deploy:
     runs-on: windows-latest
 
-    env:
-      APP_CATALOG_URL: https://wb0wj.sharepoint.com/sites/appcatalog/_layouts/15/tenantAppCatalog.aspx/manageApps
-
     steps:
-      # 1️⃣ Checkout
+      # 1️⃣ Checkout repository
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -27,7 +24,7 @@ jobs:
       - name: Install npm packages
         run: npm ci
 
-      # 4️⃣ Build SPFx
+      # 4️⃣ Build SPFx solution
       - name: Build SPFx
         run: |
           gulp bundle --ship
@@ -39,7 +36,7 @@ jobs:
         run: |
           Install-Module PnP.PowerShell -Force -Scope CurrentUser
 
-      # 6️⃣ Deploy to SharePoint
+      # 6️⃣ Deploy to Tenant App Catalog
       - name: Deploy to SharePoint
         shell: pwsh
         env:
@@ -57,17 +54,32 @@ jobs:
 
           $securePassword = ConvertTo-SecureString $env:CERT_PASSWORD -AsPlainText -Force
 
-          Write-Host "🔗 Connecting to SharePoint..."
+          # Connect to SharePoint Admin Center first
+          $adminUrl = "https://wb0wj-admin.sharepoint.com"
 
+          Write-Host "🔗 Connecting to Admin Center..."
           Connect-PnPOnline `
-            -Url $env:APP_CATALOG_URL `
+            -Url $adminUrl `
             -ClientId $env:CLIENT_ID `
             -Tenant $env:TENANT_ID `
             -CertificatePath $certPath `
             -CertificatePassword $securePassword
 
-          Write-Host "📦 Searching for .sppkg file..."
+          # Get actual Tenant App Catalog URL
+          $appCatalogUrl = Get-PnPTenantAppCatalogUrl
+          Write-Host "📦 Tenant App Catalog URL: $appCatalogUrl"
 
+          # Connect to actual App Catalog
+          Write-Host "🔄 Connecting to App Catalog..."
+          Connect-PnPOnline `
+            -Url $appCatalogUrl `
+            -ClientId $env:CLIENT_ID `
+            -Tenant $env:TENANT_ID `
+            -CertificatePath $certPath `
+            -CertificatePassword $securePassword
+
+          # Find SPFx package automatically
+          Write-Host "🔍 Searching for .sppkg file..."
           $package = Get-ChildItem -Path "sharepoint/solution" -Filter *.sppkg | Select-Object -First 1
 
           if (-not $package) {
@@ -77,15 +89,15 @@ jobs:
 
           Write-Host "✅ Found package: $($package.FullName)"
 
+          # Upload package
           Write-Host "⬆ Uploading package..."
-
           Add-PnPApp `
             -Path $package.FullName `
             -Overwrite `
             -ErrorAction Stop
 
+          # Publish package
           Write-Host "🚀 Publishing package..."
-
           Publish-PnPApp `
             -Identity $package.Name `
             -ErrorAction Stop
