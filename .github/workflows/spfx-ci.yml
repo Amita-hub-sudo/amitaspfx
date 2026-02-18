@@ -10,37 +10,45 @@ jobs:
     runs-on: windows-latest
 
     steps:
+      # 1️⃣ Checkout code
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # 2️⃣ Setup Node (Change version if needed)
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '16'   # Change to 18 if SPFx 1.18+
+          node-version: '16'   # Use 18 if SPFx 1.18+
 
+      # 3️⃣ Install npm packages
       - name: Install Dependencies
         run: npm install
 
+      # 4️⃣ Install gulp globally
       - name: Install Gulp CLI
         run: npm install gulp-cli -g
 
+      # 5️⃣ Build SPFx production package
       - name: Build SPFx Solution
         run: |
           gulp clean
           gulp bundle --ship
           gulp package-solution --ship
 
+      # 6️⃣ Upload artifact (optional but good practice)
       - name: Upload SPPKG Artifact
         uses: actions/upload-artifact@v4
         with:
           name: sppkg-file
           path: sharepoint/solution/*.sppkg
 
+      # 7️⃣ Install PnP PowerShell
       - name: Install PnP PowerShell
         shell: pwsh
         run: |
           Install-Module PnP.PowerShell -Force -Scope CurrentUser
 
+      # 8️⃣ Deploy to SharePoint App Catalog
       - name: Deploy to SharePoint App Catalog
         shell: pwsh
         run: |
@@ -50,7 +58,8 @@ jobs:
             -Url "https://wb0wj.sharepoint.com/" `
             -ClientId "${{ secrets.CLIENT_ID }}" `
             -ClientSecret "${{ secrets.CLIENT_SECRET }}" `
-            -Tenant "${{ secrets.TENANT_ID }}"
+            -Tenant "${{ secrets.TENANT_ID }}" `
+            -ClientSecretAuthentication
 
           Add-PnPApp `
             -Path $sppkgPath.FullName `
