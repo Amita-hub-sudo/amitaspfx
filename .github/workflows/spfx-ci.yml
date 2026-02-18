@@ -19,11 +19,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 18
+          cache: 'npm'
 
       # 3️⃣ Install dependencies
       - name: Install dependencies
         run: |
-          npm install
+          npm ci
           npm install -g gulp
 
       # 4️⃣ Build SPFx solution
@@ -66,7 +67,7 @@ jobs:
           [IO.File]::WriteAllBytes("cert.pfx", $bytes)
           Write-Host "✅ Certificate file created."
 
-      # 8️⃣ Debug solution folder (helps avoid null reference error)
+      # 8️⃣ Debug solution folder
       - name: Debug solution folder
         shell: pwsh
         run: |
