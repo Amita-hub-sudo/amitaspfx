@@ -58,10 +58,10 @@ jobs:
             -CertificatePassword $securePassword
 
           Add-PnPApp `
-            -Path "sharepoint/solution/your-solution.sppkg" `
+            -Path "sharepoint/solution/hello-word.sppkg" `
             -Overwrite
 
           Publish-PnPApp `
-            -Identity "your-solution.sppkg"
+            -Identity "hello-word.sppkg"
 
           Write-Host "Deployment completed successfully."
