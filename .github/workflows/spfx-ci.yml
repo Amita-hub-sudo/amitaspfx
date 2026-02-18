@@ -10,23 +10,23 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      # 1️⃣ Checkout code
+      # Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2️⃣ Setup Node 18
+      # Setup Node 18
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      # 3️⃣ Install dependencies
+      # Install dependencies
       - name: Install dependencies
         run: |
           npm install
           npm install -g gulp
 
-      # 4️⃣ Build SPFx solution
+      # Build SPFx
       - name: Build solution
         run: |
           gulp clean
@@ -34,36 +34,59 @@ jobs:
           gulp bundle --ship
           gulp package-solution --ship
 
-      # 5️⃣ Install latest PnP PowerShell
+      # Install latest PnP PowerShell
       - name: Install PnP PowerShell
         shell: pwsh
         run: |
           Install-Module PnP.PowerShell -Scope CurrentUser -Force -SkipPublisherCheck
 
-      # 6️⃣ Create certificate file from secret
+      # Validate secrets
+      - name: Validate Secrets
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace("${{ secrets.CLIENT_ID }}")) {
+            throw "CLIENT_ID secret is missing!"
+          }
+
+          if ([string]::IsNullOrWhiteSpace("${{ secrets.CERT_PASSWORD }}")) {
+            throw "CERT_PASSWORD secret is missing!"
+          }
+
+          if ([string]::IsNullOrWhiteSpace("${{ secrets.CERT_BASE64 }}")) {
+            throw "CERT_BASE64 secret is missing!"
+          }
+
+          Write-Host "✅ Secrets validated."
+
+      # Create certificate file
       - name: Create certificate file
         shell: pwsh
         run: |
-          $bytes = [Convert]::FromBase64String("${{ secrets.AZURE_CERT_BASE64 }}")
+          $bytes = [Convert]::FromBase64String("${{ secrets.CERT_BASE64 }}")
           [IO.File]::WriteAllBytes("cert.pfx", $bytes)
+          Write-Host "✅ Certificate created."
 
-      # 7️⃣ Deploy to SharePoint Tenant App Catalog
+      # Deploy to SharePoint
       - name: Deploy to SharePoint
         shell: pwsh
         run: |
           Import-Module PnP.PowerShell -Force
 
+          $securePassword = ConvertTo-SecureString "${{ secrets.CERT_PASSWORD }}" -AsPlainText -Force
+
           Connect-PnPOnline `
             -Url "https://wb0wj-admin.sharepoint.com" `
-            -ClientId "${{ secrets.AZURE_CLIENT_ID }}" `
+            -ClientId "${{ secrets.CLIENT_ID }}" `
             -Tenant "wb0wj.onmicrosoft.com" `
             -CertificatePath "cert.pfx" `
-            -CertificatePassword (ConvertTo-SecureString "${{ secrets.AZURE_CERT_PASSWORD }}" -AsPlainText -Force)
+            -CertificatePassword $securePassword
+
+          Write-Host "✅ Connected to SharePoint."
 
           Add-PnPApp `
-            -Path "sharepoint/solution/hello-word-client-side-solution.sppkg" `
+            -Path "sharepoint/solution/hello-word.sppkg" `
             -Scope Tenant `
             -Publish `
             -Overwrite
 
-          Write-Host "✅ Deployment completed successfully!"
+          Write-Host "🚀 Deployment completed successfully!"
