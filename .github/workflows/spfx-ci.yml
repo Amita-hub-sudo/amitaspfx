@@ -11,32 +11,32 @@ jobs:
 
     steps:
 
-      # ==========================
-      # Checkout Repository
-      # ==========================
+      # =====================================
+      # Checkout Code
+      # =====================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ==========================
-      # Setup Node.js
-      # ==========================
+      # =====================================
+      # Setup Node.js (FIXED TO NODE 20)
+      # =====================================
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: npm
 
-      # ==========================
+      # =====================================
       # Install Dependencies
-      # ==========================
+      # =====================================
       - name: Install dependencies
         run: |
           npm ci
           npm install -g gulp
 
-      # ==========================
+      # =====================================
       # Build SPFx Solution
-      # ==========================
+      # =====================================
       - name: Build SPFx solution
         run: |
           gulp clean
@@ -44,24 +44,24 @@ jobs:
           gulp bundle --ship
           gulp package-solution --ship
 
-      # ==========================
+      # =====================================
       # Install CLI for Microsoft 365
-      # ==========================
+      # =====================================
       - name: Install CLI for Microsoft 365
         run: npm install -g @pnp/cli-microsoft365
 
-      # ==========================
-      # Create Certificate File
-      # ==========================
+      # =====================================
+      # Create Certificate File from Secret
+      # =====================================
       - name: Create certificate file
         shell: pwsh
         run: |
           $bytes = [Convert]::FromBase64String("${{ secrets.CERT_BASE64 }}")
           [IO.File]::WriteAllBytes("cert.pfx", $bytes)
 
-      # ==========================
-      # Login using Certificate
-      # ==========================
+      # =====================================
+      # Login to Microsoft 365
+      # =====================================
       - name: Login to Microsoft 365
         run: |
           m365 login --authType certificate `
@@ -70,9 +70,9 @@ jobs:
             --certificateFile "cert.pfx" `
             --password "${{ secrets.CERT_PASSWORD }}"
 
-      # ==========================
-      # Get SPPKG File Info
-      # ==========================
+      # =====================================
+      # Get Generated SPPKG File
+      # =====================================
       - name: Get package info
         shell: pwsh
         run: |
@@ -82,9 +82,9 @@ jobs:
           echo "PACKAGE_NAME=$($package.Name)" >> $env:GITHUB_ENV
           echo "PACKAGE_PATH=$($package.FullName)" >> $env:GITHUB_ENV
 
-      # ==========================
-      # Upload to Tenant App Catalog
-      # ==========================
+      # =====================================
+      # Upload App to Tenant App Catalog
+      # =====================================
       - name: Upload to Tenant App Catalog
         run: |
           m365 spo app add `
@@ -92,9 +92,9 @@ jobs:
             --overwrite `
             --appCatalogScope tenant
 
-      # ==========================
+      # =====================================
       # Deploy App
-      # ==========================
+      # =====================================
       - name: Deploy App
         run: |
           m365 spo app deploy `
@@ -102,8 +102,8 @@ jobs:
             --appCatalogScope tenant `
             --skipFeatureDeployment true
 
-      # ==========================
+      # =====================================
       # Logout
-      # ==========================
+      # =====================================
       - name: Logout
         run: m365 logout
