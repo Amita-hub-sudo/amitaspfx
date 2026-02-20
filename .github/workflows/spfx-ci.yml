@@ -10,20 +10,33 @@ jobs:
     runs-on: windows-latest
 
     steps:
+
+      # ==========================
+      # Checkout Repository
+      # ==========================
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ==========================
+      # Setup Node.js
+      # ==========================
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
-          cache: 'npm'
+          cache: npm
 
+      # ==========================
+      # Install Dependencies
+      # ==========================
       - name: Install dependencies
         run: |
           npm ci
           npm install -g gulp
 
+      # ==========================
+      # Build SPFx Solution
+      # ==========================
       - name: Build SPFx solution
         run: |
           gulp clean
@@ -31,46 +44,66 @@ jobs:
           gulp bundle --ship
           gulp package-solution --ship
 
-      - name: Install PnP PowerShell
-        shell: pwsh
-        run: |
-          Install-Module PnP.PowerShell -Scope CurrentUser -Force -SkipPublisherCheck
+      # ==========================
+      # Install CLI for Microsoft 365
+      # ==========================
+      - name: Install CLI for Microsoft 365
+        run: npm install -g @pnp/cli-microsoft365
 
+      # ==========================
+      # Create Certificate File
+      # ==========================
       - name: Create certificate file
         shell: pwsh
         run: |
           $bytes = [Convert]::FromBase64String("${{ secrets.CERT_BASE64 }}")
           [IO.File]::WriteAllBytes("cert.pfx", $bytes)
 
-      - name: Deploy to Site Collection App Catalog
+      # ==========================
+      # Login using Certificate
+      # ==========================
+      - name: Login to Microsoft 365
+        run: |
+          m365 login --authType certificate `
+            --appId "${{ secrets.CLIENT_ID }}" `
+            --tenant "wb0wj.onmicrosoft.com" `
+            --certificateFile "cert.pfx" `
+            --password "${{ secrets.CERT_PASSWORD }}"
+
+      # ==========================
+      # Get SPPKG File Info
+      # ==========================
+      - name: Get package info
         shell: pwsh
         run: |
-          Import-Module PnP.PowerShell -Force
+          $package = Get-ChildItem sharepoint/solution/*.sppkg | Select-Object -First 1
+          if (-not $package) { throw "No .sppkg file found!" }
 
-          $securePassword = ConvertTo-SecureString "${{ secrets.CERT_PASSWORD }}" -AsPlainText -Force
+          echo "PACKAGE_NAME=$($package.Name)" >> $env:GITHUB_ENV
+          echo "PACKAGE_PATH=$($package.FullName)" >> $env:GITHUB_ENV
 
-          Connect-PnPOnline `
-            -Url "https://wb0wj-admin.sharepoint.com" `
-            -ClientId "${{ secrets.CLIENT_ID }}" `
-            -Tenant "wb0wj.onmicrosoft.com" `
-            -CertificatePath "cert.pfx" `
-            -CertificatePassword $securePassword
+      # ==========================
+      # Upload to Tenant App Catalog
+      # ==========================
+      - name: Upload to Tenant App Catalog
+        run: |
+          m365 spo app add `
+            --filePath "${{ env.PACKAGE_PATH }}" `
+            --overwrite `
+            --appCatalogScope tenant
 
-          Write-Host "✅ Connected to Site Collection App Catalog"
+      # ==========================
+      # Deploy App
+      # ==========================
+      - name: Deploy App
+        run: |
+          m365 spo app deploy `
+            --name "${{ env.PACKAGE_NAME }}" `
+            --appCatalogScope tenant `
+            --skipFeatureDeployment true
 
-          $package = Get-ChildItem "sharepoint/solution/*.sppkg" | Select-Object -First 1
-
-          if (-not $package) {
-            throw "No .sppkg file found!"
-          }
-
-          Write-Host "📦 Uploading: $($package.FullName)"
-
-          $app = Add-PnPApp `
-            -Path $package.FullName `
-            -Scope Tenant
-            -Overwrite
-
-          Publish-PnPApp -Identity $app.Id -Scope Site
-
-          Write-Host "🚀 Deployment completed successfully!"
+      # ==========================
+      # Logout
+      # ==========================
+      - name: Logout
+        run: m365 logout
